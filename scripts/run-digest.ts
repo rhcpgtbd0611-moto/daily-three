@@ -13,9 +13,13 @@ import {
 import { publishDigest } from './publish.js';
 import { enrichImages } from './ogp.js';
 import type { SourcesFile } from './types.js';
+import type { DigestLocaleBundle } from './rank.js';
 
 const dryRun = process.argv.includes('--dry-run');
 const forceRun = process.argv.includes('--force');
+
+/** How many times to swap out an article whose hero image cannot be resolved. */
+const MAX_IMAGE_REPICKS = 2;
 
 async function main() {
   const now = new Date();
@@ -41,31 +45,52 @@ async function main() {
   const scored = filterDuplicateStories(penalized, recent);
   console.log(`[digest] ${scored.length} candidates after duplicate filter`);
   const llmConfig = getLlmConfig();
-  const { ja, en } = await pickTop3Bilingual(scored, llmConfig, recent);
   console.log(`[digest] Picker: anthropic bilingual (model: ${llmConfig.anthropicModel})`);
 
-  if (ja.articles.length === 0) {
-    console.log('[digest] No articles to publish');
-    return;
+  // The site needs a hero image per article, but one unreachable image used to cost the
+  // whole edition. Drop the offender from the pool and let the picker choose again.
+  const unusable = new Set<string>();
+  let ja: DigestLocaleBundle | undefined;
+  let en: DigestLocaleBundle | undefined;
+
+  for (let round = 0; round <= MAX_IMAGE_REPICKS; round++) {
+    const pool = scored.filter((a) => !unusable.has(a.url));
+    ({ ja, en } = await pickTop3Bilingual(pool, llmConfig, recent));
+
+    if (ja.articles.length === 0) {
+      console.log('[digest] No articles to publish');
+      return;
+    }
+
+    await enrichImages(ja.articles);
+    for (let i = 0; i < en.articles.length; i++) {
+      en.articles[i].image = ja.articles[i]?.image;
+      en.articles[i].images = ja.articles[i]?.images;
+      en.articles[i].video = ja.articles[i]?.video;
+    }
+    for (const a of ja.articles) {
+      const n = a.images?.length ?? (a.image ? 1 : 0);
+      console.log(`[digest] media ${a.sourceId}: ${n} image(s)${a.image ? '' : ' — MISSING'}`);
+    }
+
+    const missingImages = ja.articles.filter((a) => !a.image);
+    if (missingImages.length === 0) break;
+
+    for (const a of missingImages) {
+      console.warn(`[digest] no reachable hero image: ${a.title} (${a.url})`);
+      unusable.add(a.url);
+    }
+
+    if (round === MAX_IMAGE_REPICKS) {
+      const titles = missingImages.map((a) => a.title).join('; ');
+      throw new Error(
+        `[digest] still no reachable hero image after ${MAX_IMAGE_REPICKS} re-pick(s): ${titles}`,
+      );
+    }
+    console.warn(`[digest] re-picking without ${unusable.size} article(s) that have no image`);
   }
 
-  await enrichImages(ja.articles);
-  for (let i = 0; i < en.articles.length; i++) {
-    en.articles[i].image = ja.articles[i]?.image;
-    en.articles[i].images = ja.articles[i]?.images;
-    en.articles[i].video = ja.articles[i]?.video;
-  }
-  const missingImages = ja.articles.filter((a) => !a.image);
-  for (const a of ja.articles) {
-    const n = a.images?.length ?? (a.image ? 1 : 0);
-    console.log(`[digest] media ${a.sourceId}: ${n} image(s)${a.image ? '' : ' — MISSING'}`);
-  }
-  if (missingImages.length > 0) {
-    const titles = missingImages.map((a) => a.title).join('; ');
-    throw new Error(
-      `[digest] ${missingImages.length} article(s) have no reachable hero image after enrichment: ${titles}`,
-    );
-  }
+  if (!ja || !en) throw new Error('[digest] Picker produced no result');
 
   const edition = digestEditionCalendarDate(now);
   const publishDate = digestPublishDate(now);

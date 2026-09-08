@@ -26,10 +26,14 @@ export function normalizeImageUrl(url: string, sourceId?: string): string {
     u = u.replace(/_dezeen_\d+_sq(?=\.[a-z]+$)/i, '_dezeen_hero');
   }
 
-  // Designboom embedded sizes
-  u = u.replace(/-700-500x400-/i, '-700-');
-  u = u.replace(/-500x400-/i, '-');
-  u = u.replace(/-(\d{3,4})x(\d{3,4})-(?=[^/]*\.[a-z]+$)/i, '-');
+  // Designboom embedded sizes. Scoped to Designboom on purpose: other publishers put
+  // the original dimensions in the real filename (Dezeen's "..._col_41-1704x1278-1.jpg"),
+  // and stripping them there produces a 404 that costs the article its hero image.
+  if (/designboom\.com/i.test(u)) {
+    u = u.replace(/-700-500x400-/i, '-700-');
+    u = u.replace(/-500x400-/i, '-');
+    u = u.replace(/-(\d{3,4})x(\d{3,4})-(?=[^/]*\.[a-z]+$)/i, '-');
+  }
 
   // Core77 — lead_400 is part of the real S3 filename, not a downscale suffix
   u = u.replace(/\/thumb\//i, '/');

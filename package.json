@@ -18,7 +18,7 @@
     "social:draft": "tsx scripts/social/run-social-draft.ts",
     "social:draft:dry": "tsx scripts/social/run-social-draft.ts --dry-run",
     "test": "npm run test:image && npm run test:media && npm run test:dedup && npm run test:schedule && npm run test:collect && npm run test:rank && npm run test:sources && npm run test:social",
-    "test:social": "tsx --test scripts/social/load-digest.test.ts scripts/social/quality-gate.test.ts scripts/social/compose.test.ts",
+    "test:social": "tsx --test scripts/social/load-digest.test.ts scripts/social/quality-gate.test.ts scripts/social/compose.test.ts scripts/social/notify-slack.test.ts",
     "test:sources": "tsx --test scripts/sources-public.test.ts",
     "test:collect": "tsx --test scripts/collect.test.ts",
     "test:rank": "tsx --test scripts/rank.test.ts",

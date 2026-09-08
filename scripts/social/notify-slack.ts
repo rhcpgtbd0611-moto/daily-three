@@ -11,6 +11,26 @@ export function intentUrl(text: string): string {
   return `https://x.com/intent/post?text=${encodeURIComponent(text)}`;
 }
 
+/**
+ * Slack rejects the whole message with `invalid_blocks` when image_url is not a valid
+ * URI — publisher URLs with raw spaces (Auto Express) are the usual offender.
+ * Percent-encode what can be encoded, drop what cannot.
+ */
+export function safeImageUrl(raw: string | undefined): string | undefined {
+  const trimmed = raw?.trim();
+  if (!trimmed) return undefined;
+
+  let url: URL;
+  try {
+    url = new URL(trimmed);
+  } catch {
+    return undefined;
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return undefined;
+  if (url.href.length > 3000) return undefined;
+  return url.href;
+}
+
 function codeBlock(text: string): string {
   return `\`\`\`\n${text}\n\`\`\``;
 }
@@ -19,9 +39,12 @@ function section(text: string) {
   return { type: 'section', text: { type: 'mrkdwn', text } };
 }
 
+function statusOf(issues: GateIssue[]): string {
+  return issues.some((i) => i.level === 'error') ? '⚠️ 要修正' : '✅ そのまま投稿可';
+}
+
 export function buildSlackPayload(draft: SocialDraft, issues: GateIssue[]) {
-  const errors = issues.filter((i) => i.level === 'error');
-  const status = errors.length > 0 ? '⚠️ 要修正' : '✅ そのまま投稿可';
+  const status = statusOf(issues);
 
   const blocks: unknown[] = [
     {
@@ -39,8 +62,9 @@ export function buildSlackPayload(draft: SocialDraft, issues: GateIssue[]) {
     },
   ];
 
-  if (draft.image) {
-    blocks.push({ type: 'image', image_url: draft.image, alt_text: draft.source });
+  const image = safeImageUrl(draft.image);
+  if (image) {
+    blocks.push({ type: 'image', image_url: image, alt_text: draft.source });
   }
 
   blocks.push(
@@ -73,6 +97,47 @@ export function buildSlackPayload(draft: SocialDraft, issues: GateIssue[]) {
   };
 }
 
+/** Last resort: no Block Kit at all, so nothing about formatting can reject it. */
+export function buildPlainTextPayload(draft: SocialDraft, issues: GateIssue[]) {
+  const lines = [
+    `Daily Three 下書き ${draft.digestDate}（${statusOf(issues)}）`,
+    `${draft.source} ・ ${draft.articleIndex + 1}件目（${PICK_REASON_LABEL[draft.pickReason]}）`,
+    '',
+    `1本目（日本語）\n${draft.jaText}`,
+    '',
+    `2本目（英語スレッド）\n${draft.enText}`,
+    '',
+    `3本目（リプライ）\n${draft.replyText}`,
+    '',
+    `X の下書き: ${intentUrl(draft.jaText)}`,
+    `digest: ${draft.digestUrl}`,
+    `元記事: ${draft.articleUrl}`,
+  ];
+
+  if (issues.length > 0) {
+    lines.push('', ...issues.map((i) => `${i.level === 'error' ? '🔴' : '🟡'} ${i.code}: ${i.message}`));
+  }
+
+  return { text: lines.join('\n') };
+}
+
+async function post(webhookUrl: string, payload: unknown) {
+  const res = await fetch(webhookUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  return { ok: res.ok, status: res.status, body: res.ok ? '' : await res.text() };
+}
+
+/** Drop the image block — the one block whose content comes from an outside publisher. */
+function withoutImage(payload: ReturnType<typeof buildSlackPayload>) {
+  return {
+    ...payload,
+    blocks: payload.blocks.filter((b) => (b as { type?: string }).type !== 'image'),
+  };
+}
+
 export async function notifySlack(
   draft: SocialDraft,
   issues: GateIssue[],
@@ -82,13 +147,27 @@ export async function notifySlack(
     throw new Error('SLACK_WEBHOOK_URL is required. Set it in .env or GitHub Secrets.');
   }
 
-  const res = await fetch(webhookUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(buildSlackPayload(draft, issues)),
-  });
+  const payload = buildSlackPayload(draft, issues);
+  const full = await post(webhookUrl, payload);
+  if (full.ok) return;
 
-  if (!res.ok) {
-    throw new Error(`Slack webhook failed: ${res.status} ${await res.text()}`);
+  // The draft matters more than its decoration: never let one bad block swallow the
+  // notification. Step down to a version Slack is more likely to accept.
+  console.warn(`[social] Slack rejected the message: ${full.status} ${full.body}`);
+
+  const stripped = withoutImage(payload);
+  if (stripped.blocks.length !== payload.blocks.length) {
+    const retry = await post(webhookUrl, stripped);
+    if (retry.ok) {
+      console.warn('[social] Sent without the image block');
+      return;
+    }
+    console.warn(`[social] Slack rejected it without the image too: ${retry.status} ${retry.body}`);
   }
+
+  const plain = await post(webhookUrl, buildPlainTextPayload(draft, issues));
+  if (!plain.ok) {
+    throw new Error(`Slack webhook failed: ${plain.status} ${plain.body}`);
+  }
+  console.warn('[social] Sent as plain text');
 }

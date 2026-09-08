@@ -100,3 +100,26 @@ test('imageUrlCandidates keeps raw URL when normalization would break Core77 ass
     'https://s3files.core77.com/blog/images/lead_n_spotlight/1836824_lead_400_144380_.jpg';
   assert.deepEqual(imageUrlCandidates(lead, 'core77'), [lead]);
 });
+
+test('normalizeImageUrl keeps dimensions that belong to a Dezeen filename', async () => {
+  const { normalizeImageUrl } = await import('./image-url.js');
+  const full =
+    'https://static.dezeen.com/uploads/2026/09/dyson-camerajet-first-toothbrush-22floss_dezeen_2364_col_41-1704x1278-1.jpg';
+  const thumb =
+    'https://static.dezeen.com/uploads/2026/09/dyson-camerajet-first-toothbrush-22floss_dezeen_2364_col_41-1704x1278-1-852x852.jpg';
+
+  // Only the trailing thumbnail suffix comes off; -1704x1278- is part of the real file.
+  assert.equal(normalizeImageUrl(thumb, 'dezeen-cars'), full);
+  assert.equal(normalizeImageUrl(full, 'dezeen-cars'), full);
+});
+
+test('normalizeImageUrl still strips Designboom embedded sizes', async () => {
+  const { normalizeImageUrl } = await import('./image-url.js');
+  const sized =
+    'https://static.designboom.com/wp-content/uploads/2026/05/furny-robot-designboom-1200x800-x.jpg';
+  const stable =
+    'https://static.designboom.com/wp-content/uploads/2026/05/furny-robot-designboom-x.jpg';
+
+  assert.equal(normalizeImageUrl(sized, 'designboom-auto'), stable);
+  assert.equal(normalizeImageUrl(sized), stable); // sourceId is not always known
+});
