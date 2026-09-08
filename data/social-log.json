@@ -16,5 +16,23 @@
         "message": "digest に無い語: Single, Unified"
       }
     ]
+  },
+  {
+    "draftedAt": "2026-09-08T23:47:33.083Z",
+    "digestDate": "2026-09-07",
+    "articleIndex": 0,
+    "articleUrl": "https://www.autoexpress.co.uk/audi/a2/370376/new-audi-a2-e-tron-revealed-2026-pictures",
+    "pickReason": "rotation",
+    "jaBody": "コンパクトEVの顔をどう作るか。アウディが新型A2 e-tronで、グリルやボディラインを電動化時代に合わせ再構成。限られた車体で視覚的アイデンティティを保つ試み。",
+    "enBody": "How do compact EVs establish visual presence? Audi's A2 e-tron reinterprets traditional design elements for the electric era. A study in maintaining brand identity within spatial constraints.",
+    "jaText": "【Daily Three】9/7(月)\n新型アウディA2 e-tron、2026年型が公開\n\nコンパクトEVの顔をどう作るか。アウディが新型A2 e-tronで、グリルやボディラインを電動化時代に合わせ再構成。限られた車体で視覚的アイデンティティを保つ試み。\n\n出典: Auto Express",
+    "enText": "New Audi A2 e-tron Revealed for 2026\n\nHow do compact EVs establish visual presence? Audi's A2 e-tron reinterprets traditional design elements for the electric era. A study in maintaining brand identity within spatial constraints.\n\nSource: Auto Express",
+    "issues": [
+      {
+        "level": "warn",
+        "code": "unsourced-en",
+        "message": "digest に無い語: EVs"
+      }
+    ]
   }
 ]
